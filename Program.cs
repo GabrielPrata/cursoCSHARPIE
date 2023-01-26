@@ -3,47 +3,65 @@ using Microsoft.AspNetCore.Mvc;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-app.MapGet("/", () => "Hello World!");
+app.MapPost("/Products", (Product product) => {
+    ProductRepository.Add(product);
 
-// new {} --->  Usado para criar um objeto anônimo. 
-app.MapGet("/User", () => new {Name = "Gabriel Prata", Age = "21"});
-
-// Aqui eu altero a resposta da requisição
-// tudo que está depois de => é o corpo do meu método
-app.MapGet("/AddHeader", (HttpResponse response) => {
-    response.Headers.Add("Teste", "Eu gosto de Pudim");
-    return new {Name = "Gabriel Prata", Age = 21};
+    //Results é o resultado que vamos retornar para o cliente em forma de status code
+    //Código 201 = Created. Utilizado quando o post dá certo e cria o dado.
+    //Com isso, no header na resposta é retornado o location, que ajuda o cliente
+    //a saber onde a informação foi salva, ajudando a saber qual a URI 
+    //para obter a informção que acabou de ser salva
+    return Results.Created($"/Products/{product.Code}", product.Code); 
 
 });
 
-app.MapPost("/SaveProduct", (Product product) => {
-    return product.Code + " - " + product.Name;
+app.MapGet("/Products/{code}", ([FromRoute] string code) => {
+    var product = ProductRepository.GetBy(code);
+    if(product != null){
+        return Results.Ok(product);
+    }else{
+        return Results.NotFound();
+    }
 });
 
-// Formas de passar a informação pela URL
+app.MapPut("/Products", (Product product) => {
+    var productSaved = ProductRepository.GetBy(product.Code);
+    productSaved.Name = product.Name;
+    return Results.Ok();
 
-// 1 - Através de Query
-//api.app.com/Users?datestart={DataQualquer}&dateend={OutraDataQualquer}
-// [FromQuery] é usado para dizer ao servidor que o parâmetro está sendo passado via query
-app.MapGet("/GetProduct", ([FromQuery] string dateStart, [FromQuery] string dateEnd) => {
-    return dateStart + " - " + dateEnd;
 });
 
+app.MapDelete("/Products/{code}", ([FromRoute] string code) => {
+    var productSaved = ProductRepository.GetBy(code);
+    ProductRepository.Remove(productSaved);
+    return Results.Ok();
 
-// 2 - Através da Rota
-// Através da rota as informações são obrigatórias de serem passadass
-//api.app.com/User/{code}
-// [FromRoute] é usado para dizer ao servidor que o parâmetro está sendo passado via rota
-app.MapGet("/GetProduct/{code}", ([FromRoute] string code) => {
-    return code;
-});
-
-
-app.MapGet("/GetProductByHeader", (HttpRequest request) => {
-    return request.Headers["product-code"].ToString();
 });
 
 app.Run();
+
+
+// Classe estática pois assim ela não é gerada novamente a cada requisição,
+// ficando salva na memória do servidor
+public static class ProductRepository{
+    public static List<Product> Products { get; set; }   
+
+    public static void Add(Product product){
+        if(Products == null){
+            Products = new List<Product>();
+        }
+        Products.Add(product);
+    }
+    public static Product GetBy(string code) {
+        //Aqui busco o dado, e caso ele não seja encontrado retorno algo como padrão
+        return Products.FirstOrDefault(p => p.Code == code);
+    }
+
+    public static void Remove(Product product) {
+        Products.Remove(product);
+    } 
+
+}
 
 public class Product {
     public string Code { get; set; }
