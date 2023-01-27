@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddDbContext<ApplicationDbContext>();
+
 var app = builder.Build();
 
 app.MapPost("/Products", (Product product) => {
@@ -66,5 +69,14 @@ public static class ProductRepository{
 public class Product {
     public string Code { get; set; }
     public string Name { get; set; }
+}
+
+public class ApplicationDbContext : DbContext {
+    public DbSet<Product> Products { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options) => options.UseSqlServer(
+        "Server=localhost;Database=Products;User Id=sa;Password=@Abcd1234;MultiplrActiveResultSets=true;Encrypt=YES;TrustServerCertificate=YES"
+    );
+
 }
 
