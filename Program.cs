@@ -1,52 +1,114 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-app.MapGet("/", () => "Hello World!");
+//De forma automatizada o C# já interpreta que esse configuration é do appsettings.json
+var config = app.Configuration;
 
-// new {} --->  Usado para criar um objeto anônimo. 
-app.MapGet("/User", () => new {Name = "Gabriel Prata", Age = "21"});
+//Salvo os produtos na classe Product Repository
+ProductRepository.Init(config);
 
-// Aqui eu altero a resposta da requisição
-// tudo que está depois de => é o corpo do meu método
-app.MapGet("/AddHeader", (HttpResponse response) => {
-    response.Headers.Add("Teste", "Eu gosto de Pudim");
-    return new {Name = "Gabriel Prata", Age = 21};
+app.MapPost("/Products", (Product product) =>
+{
+    ProductRepository.AddProduct(product);
 
+    //Para retornar um código HTTP:
+    //Created recebe dois parâmetros, o primeiro irá retornar no header da resposta e o segundo no Body
+    return Results.Created($"/Products/{product.Code}", product.Code);
 });
 
-app.MapPost("/SaveProduct", (Product product) => {
-    return product.Code + " - " + product.Name;
+app.MapGet("/Products/{code}", ([FromRoute] int code) =>
+{
+    var productSaved = ProductRepository.GetBy(code);
+
+    //Para retornar NotFound preciso também retornar Ok
+    if (productSaved != null)
+    {
+        return Results.Ok(productSaved);
+    }
+    else
+    {
+        return Results.NotFound();
+    }
 });
 
-// Formas de passar a informação pela URL
+app.MapPut("/Products", (Product product) =>
+{
+    var productSaved = ProductRepository.GetBy(product.Code);
+    productSaved.Name = product.Name;
 
-// 1 - Através de Query
-//api.app.com/Users?datestart={DataQualquer}&dateend={OutraDataQualquer}
-// [FromQuery] é usado para dizer ao servidor que o parâmetro está sendo passado via query
-app.MapGet("/GetProduct", ([FromQuery] string dateStart, [FromQuery] string dateEnd) => {
-    return dateStart + " - " + dateEnd;
+    //O PUT e o DELETE eu posso retornar 200
+    return Results.Ok();
 });
 
+//Posso configurar para que determinada funcionalidade não funcione em um determinado ambiente
+//Abaixo, configuro para rodar apenas no ambiente de Staging
 
-// 2 - Através da Rota
-// Através da rota as informações são obrigatórias de serem passadass
-//api.app.com/User/{code}
-// [FromRoute] é usado para dizer ao servidor que o parâmetro está sendo passado via rota
-app.MapGet("/GetProduct/{code}", ([FromRoute] string code) => {
-    return code;
+app.MapDelete("/Products/{code}", ([FromRoute] int code) =>
+{
+    var productSaved = ProductRepository.GetBy(code);
+    ProductRepository.RemoveProduct(productSaved);
+
+    return Results.Ok();
 });
 
-
-app.MapGet("/GetProductByHeader", (HttpRequest request) => {
-    return request.Headers["product-code"].ToString();
-});
+if (app.Environment.IsStaging())
+{
+    app.MapGet("/Configuration/Database", (IConfiguration config) =>
+    {
+        return Results.Ok($"{config["Database:Connection"]}:{config["database:port"]}");
+    });
+}
 
 app.Run();
 
-public class Product {
-    public string Code { get; set; }
+public static class ProductRepository
+{
+
+    //O static é para manter os valores salvos na memória, pois se não ele apagará e enviará
+    //dados novos a cada requisição
+    public static List<Product> Products { get; set; } = new List<Product>();
+
+    public static void Init(IConfiguration config)
+    {
+        //Pego os valores salvos no JSON com GetSection (pego a sessão Products)
+        //e armazeno na lista
+        var products = config.GetSection("Products").Get<List<Product>>();
+
+        //Após isso salvo o conteúdo desta lista interna na classe Products
+        Products = products;
+    }
+
+    public static void AddProduct(Product product)
+    {
+        Products.Add(product);
+    }
+
+    public static void RemoveProduct(Product product)
+    {
+        Products.Remove(product);
+    }
+
+    public static Product GetBy(int code)
+    {
+        //Retorna o primeiro código encontrado com First()
+        //FirstOrDefault() retorna valores padrão 0, null, false...
+        //Expressão abaixo: Onde o código é igual ao código que eu passei como parâmetro para o método
+        return Products.FirstOrDefault(p => p.Code == code);
+    }
+}
+
+public class Product
+{
+    public int Code { get; set; }
     public string Name { get; set; }
 }
 
+//Atraves do DbSet a classe ApplicationDbContext entende que ela deve ser mapeada para o banco de dados
+public class ApplicationDbContext : DbContext
+{
+    public DbSet<Product> Products { get; set; }
+
+}
